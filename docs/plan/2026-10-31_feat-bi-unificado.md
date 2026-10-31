@@ -1,6 +1,6 @@
 # Unificación y ampliación de BI
 
-**Fecha:** 2026-10-31. **Estado:** fase 1 [Actual], implementada y verificada localmente; cierre y fases 2–5 pendientes de ACK.
+**Fecha:** 2026-10-31. **Estado:** fase 1 aprobada; fase 2 [Actual] en implementación; fases 3–5 pendientes de ACK.
 
 **Autorización inicial:** el usuario solicitó «PLEASE IMPLEMENT THIS PLAN» y reprodujo el plan completo, incluyendo ejecución por fases y ACK del repositorio. Autoriza la fase 1; no agrupar fases ni interpretar esto como autorización de DDL persistente, modificación directa del schema, infraestructura o despliegue.
 
@@ -25,8 +25,8 @@ Cuatro entidades OLTP con FK por empresa y auditoría existente. Progreso crecie
 
 | Fase | Estado | Entrega / aceptación |
 | --- | --- | --- |
-| 1. Contratos y diseño | [Actual] | Catálogo, validadores/tipos, contrato HTTP/temporal/permisos, borradores SQL/Prisma y verificación offline. Sin activación. |
-| 2. Datos y mediciones | Pendiente de ACK | Separar datos base de jobs stats; consultas DW, cohortes, filtros, comparaciones y evaluador compartido. PostgreSQL descartable/ACL y benchmark autorizados por separado. |
+| 1. Contratos y diseño | Aprobada | Catálogo, validadores/tipos, contrato HTTP/temporal/permisos, borradores SQL/Prisma y verificación offline. Sin activación. |
+| 2. Datos y mediciones | [Actual] | Separar datos base de jobs stats; consultas DW, cohortes, filtros, comparaciones y evaluador compartido. PostgreSQL descartable/ACL y benchmark autorizados por separado. |
 | 3. Gestión y API | Pendiente de ACK | Tras ACK de schema, promover borradores con migración nueva, generar cliente; recursos KPI/OKR/avances, CAS, auditoría, idempotencia, asignaciones y cierre. Nuevos HTTP privados. |
 | 4. Interfaz y legado | Pendiente de ACK | Resumen/desgloses/gráficos/filtros, gestión KPI/OKR, Actividad operativa; única entrada BI, redirección y eliminación del feature antiguo, adaptadores compatibles. |
 | 5. Aceptación integral | Pendiente de ACK | Recorridos reales admin/editor/dos empresas, escritorio/móvil; caída DW, regresión, migración/ACL/restauración y documentación de habilitación. Sin despliegue remoto. |
@@ -74,3 +74,11 @@ La copia Prisma es temporal y debe reconstruirse siguiendo las relaciones invers
 **Commit sugerido al cerrar fase 1:** `feat(bi): definí los contratos y el modelo de BI unificado`
 
 **Siguiente ACK esperado:** revisión/cierre de fase 1 y autorización de fase 2. La fase 2 no requiere cambiar el schema Prisma; su aplicación para gestión OLTP se revisará antes de fase 3.
+
+## ACK y avance de fase 2
+
+ACK «COntinuar» recibido tras la entrega de fase 1. Autoriza fase 2; no modifica las restricciones de schema, DDL persistente o fases posteriores. Evaluador decimal compartido iniciado; consultas DW, separación ETL y aceptación de datos siguen pendientes.
+
+### Avance verificado de fase 2 (parcial)
+
+Implementados `measurement-engine.ts` (16 métricas, comparación, progreso y promedio con propagación de desconocidos; Decimal local de precisión 80) y `cohort-filter.ts` (predicados parametrizados por tenant/run, semijoins de etiquetas, fuentes separadas y período previo). No están registrados como HTTP. Suite focalizada: 108/108 en ocho archivos, incluidos 19 casos nuevos de aritmética y construcción de filtros. Estas pruebas no ejecutan SQL ni acreditan aislamiento efectivo en PostgreSQL. Continúan pendientes los repositorios que consumen los predicados, series/desgloses/comparación integrados, separación de datos ETL respecto a jobs estadísticos y pruebas de persistencia/ACL/benchmark. Fase 2 permanece [Actual], sin cierre ni solicitud de ACK de fase 3.
