@@ -45,7 +45,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     const statistics = await statisticsDataReady(
       source,
       target,
-      config.statisticsRequested,
+      true, // Core taxonomy/history capture is independent of optional statistics jobs.
     );
     if (config.statisticsRequested && !statistics)
       logger.warn({
@@ -59,8 +59,8 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
       (phase) => logger.log({ event: 'bi.etl_phase_finished', ...phase }),
     );
     const scheduler = new EtlScheduler(inventory, control, service);
-    const calculate = await statisticsEngineReady(target, statistics);
-    if (statistics && !calculate)
+    const calculate = config.statisticsRequested && await statisticsEngineReady(target, statistics);
+    if (config.statisticsRequested && statistics && !calculate)
       logger.warn({
         event: 'bi.statistics_engine_unavailable',
         code: 'BI_STATISTICS_UNAVAILABLE',

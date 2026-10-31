@@ -13,6 +13,9 @@ export function measured(input: Prisma.Decimal.Value): BiMeasurement {
   const text = value.toDecimalPlaces(12).toFixed();
   return exactDecimalSchema.safeParse(text).success ? { status: 'available', value: text, reason: null } : missing('OUT_OF_RANGE');
 }
+export function average(sum: Prisma.Decimal.Value, count: Prisma.Decimal.Value): BiMeasurement {
+  return new Decimal(count).isZero() ? missing('ZERO_DENOMINATOR') : measured(new Decimal(sum).div(count));
+}
 export function ratio(numerator: Prisma.Decimal.Value, denominator: Prisma.Decimal.Value): BiMeasurement {
   const divisor = new Decimal(denominator);
   return divisor.isZero() ? missing('ZERO_DENOMINATOR') : measured(new Decimal(numerator).div(divisor).times(100));

@@ -59,7 +59,6 @@ export class EtlService {
       const outcome = await this.load(
         lease,
         this.warehouse.operations ? undefined : signal,
-        commercial.statistics,
       );
       if (outcome.result.status === 'succeeded') return outcome.result;
       failure = outcome.result;
@@ -77,7 +76,6 @@ export class EtlService {
   private async load(
     lease: Lease,
     signal?: AbortSignal,
-    statisticsAllowed = true,
   ): Promise<{ result: EtlResult; nextSlot?: Date }> {
     let lost = false;
     let heartbeat: Promise<void> | undefined;
@@ -171,9 +169,8 @@ export class EtlService {
         lease.tenantId,
       )) ?? { bi: true, statistics: true };
       if (!commercial.bi) throw new EtlError('BI_BILLING_SUSPENDED');
-      if (statisticsAllowed && commercial.statistics)
-        await this.warehouse.publish(lease, snapshot, counts);
-      else await this.warehouse.publish(lease, snapshot, counts, false);
+      // Base taxonomy/history follows BI eligibility; statistical jobs have their own gate.
+      await this.warehouse.publish(lease, snapshot, counts);
       this.observe?.({
         phase: 'publication',
         durationMs: Date.now() - publicationStarted,

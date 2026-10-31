@@ -52,10 +52,10 @@ describe('ETL lifecycle', () => {
     source.commercialEligibility.mockResolvedValue({bi:false,statistics:false});
     expect(await service.runTenant('tenant')).toMatchObject({status:'skipped',code:'BI_BILLING_SUSPENDED'});expect(warehouse.claim).not.toHaveBeenCalled();expect(source.extract).not.toHaveBeenCalled();
   });
-  it('publishes BI base while explicitly suppressing optional statistics',async()=>{
+  it('publishes BI base including taxonomy while optional statistical jobs are disallowed',async()=>{
     source.commercialEligibility.mockResolvedValue({bi:true,statistics:false});
     expect(await service.runTenant('tenant')).toMatchObject({status:'succeeded'});
-    expect(warehouse.publish).toHaveBeenCalledWith(lease,expect.objectContaining({tenantId:'tenant',at:expect.any(Date)}),{categories:0n,testimonials:0n,events:0n},false);
+    expect(warehouse.publish).toHaveBeenCalledWith(lease,expect.objectContaining({tenantId:'tenant',at:expect.any(Date)}),{categories:0n,testimonials:0n,events:0n});
   });
   it('does not re-extract or publish after commercial permission is withdrawn before publication',async()=>{
     source.commercialEligibility.mockResolvedValueOnce({bi:true,statistics:true}).mockResolvedValue({bi:false,statistics:false});

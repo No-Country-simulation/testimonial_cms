@@ -1,6 +1,6 @@
 # Unificación y ampliación de BI
 
-**Fecha:** 2026-10-31. **Estado:** fase 1 aprobada; fase 2 [Actual] en implementación; fases 3–5 pendientes de ACK.
+**Fecha:** 2026-10-31. **Estado:** fase 1 aprobada; fase 2 [Actual] implementada y verificada localmente; cierre y fases 3–5 pendientes de ACK.
 
 **Autorización inicial:** el usuario solicitó «PLEASE IMPLEMENT THIS PLAN» y reprodujo el plan completo, incluyendo ejecución por fases y ACK del repositorio. Autoriza la fase 1; no agrupar fases ni interpretar esto como autorización de DDL persistente, modificación directa del schema, infraestructura o despliegue.
 
@@ -82,3 +82,32 @@ ACK «COntinuar» recibido tras la entrega de fase 1. Autoriza fase 2; no modifi
 ### Avance verificado de fase 2 (parcial)
 
 Implementados `measurement-engine.ts` (16 métricas, comparación, progreso y promedio con propagación de desconocidos; Decimal local de precisión 80) y `cohort-filter.ts` (predicados parametrizados por tenant/run, semijoins de etiquetas, fuentes separadas y período previo). No están registrados como HTTP. Suite focalizada: 108/108 en ocho archivos, incluidos 19 casos nuevos de aritmética y construcción de filtros. Estas pruebas no ejecutan SQL ni acreditan aislamiento efectivo en PostgreSQL. Continúan pendientes los repositorios que consumen los predicados, series/desgloses/comparación integrados, separación de datos ETL respecto a jobs estadísticos y pruebas de persistencia/ACL/benchmark. Fase 2 permanece [Actual], sin cierre ni solicitud de ACK de fase 3.
+
+### Continuación de fase 2: lectura por período y captura base
+
+Añadido `PeriodMeasurementsRepository`: lectura mediante BiConnection (DW, sólo lectura y snapshot transaccional), corte al cierre solicitado, cohortes parametrizadas, componentes agregados sin fan-out, disponibilidad de taxonomía/creaciones y comparación con período previo. No se registra HTTP aún. Se separó el preflight/captura base de `BI_STATISTICS_ENABLED` en la CLI: los jobs siguen condicionados por esa bandera; publicar datos base sigue sujeto al permiso BI, no al permiso estadístico. El parámetro explícito del publicador para fixtures legadas permanece compatible.
+
+Verificación: 136/136 casos en 12 suites, sin omisiones, incluyendo tres pruebas nuevas de orquestación DW con consultas simuladas y regresión ETL con permiso estadístico ausente. ESLint de archivos afectados con cero advertencias. No se ejecutó SQL/DDL sobre PostgreSQL: los mocks no acreditan sintaxis, ACL ni resultados efectivos. Siguen pendientes series/desgloses/opciones de filtros y aceptación PostgreSQL/benchmark para cerrar fase 2; no solicitar ACK de fase 3 todavía.
+
+### Continuación de fase 2: exploración y series
+
+Añadido `ExplorationRepository` (sin registro HTTP): desgloses por categoría/etiqueta/estado/rating, fuentes, ranking de 20, búsqueda de opciones históricas con total/paginación y series diarias por lote. El inventario diario usa cortes reales de cada día; engagement conserva la cohorte de cierre. Taxonomía ausente queda explícita; los días sin corte no se convierten en inventario cero. El agregado de tags usa pertenencias únicas y eventos previamente agregados por testimonio, evitando fan-out. Medias usan el evaluador decimal compartido.
+
+Verificación: 140/140 casos en 13 suites, sin omisiones; cuatro casos nuevos de orquestación simulan SQL y verifican huecos/ceros, objetos opcionales ausentes, total en página vacía y búsqueda vinculada como parámetro. ESLint afectado con cero advertencias. Estas pruebas no acreditan que PostgreSQL ejecute los SQL ni sus ACL/costo; faltan ejecución real, oráculos por dimensiones y benchmark para aceptar/cerrar fase 2. La composición final de DTO/HTTP corresponde a fase 3. Mantener fase 2 [Actual]; no marcar completada ni solicitar ACK de fase 3.
+
+## Verificación y entrega de fase 2
+
+**Estado:** implementación y aceptación local completadas, pendientes de revisión/ACK de cierre. Las notas parciales anteriores conservan su fecha lógica de avance; esta verificación resuelve la ejecución SQL/ACL y medición que entonces estaban pendientes. No se inició fase 3.
+
+- Integración reproducible `test/bi-unified-local.integration.ts`: opt-in `TEST_BI_UNIFIED_LOCAL=true`; crea un cluster PostgreSQL 18.6 propio en un directorio aleatorio de /tmp mediante initdb, socket Unix privado y TCP desactivado. No recibe DSN de bases compartidas. Instala sólo DW 0001–0005 existentes mediante el migrador de fixtures, publica cortes mediante WarehouseRepository y crea un lector con SELECT/USAGE exclusivamente en dw. Al finalizar desconecta, detiene su proceso y elimina su directorio. La limpieza fue verificada fuera del test. No ejecuta prisma migrate deploy/db push, no modifica schema.prisma ni aplica SQL en destinos persistentes.
+- Once casos reales: totales independientes/CTR150; etiquetas múltiples sin fan-out; agregados/ranking; series con hueco; opciones y búsqueda literal/paginación; otra empresa vacía; denegaciones SQL42501 de DML/DDL/control; atributos de cortes históricos; sin categoría y fuentes sólo engagement; BigInt9007199254740993 sin redondeo; lecturas de365d; y corte legado sin marcador de etiquetas. Los permisos de usuario/HTTP y CSRF no se acreditan aquí: corresponden a fase3/5.
+- Fixture: tres empresas, seis filas de snapshots de testimonios, diez eventos de origen reconciliados y tres días con cortes/ausencias. Lectura de365d con cinco repeticiones de daily+breakdowns+filterOptions; tiempos agregados en log JSON saneado `bi.unified_local_read_benchmark`. Es un benchmark pequeño, disperso, de consultas reales y caché local, NO prueba de capacidad, concurrencia productiva o independencia de CPU/IO. No se añade un SLO inventado. La volumetría representativa/aceptación productiva permanece fuera de esta evidencia.
+- Regresión final:151/151 casos en14 suites, cero fallos/omisiones; once son integración PostgreSQL real, los restantes incluyen contratos/aritmética/SQL simulado/ETL/scheduler/stats/compatibilidad. Tipos API con `tsc --noEmit --incremental false` aprobado. ESLint del test nuevo con `--max-warnings 0` aprobado; archivos de producción afectados ya verificados sin advertencias en las continuaciones previas. `git diff --check` aprobado.
+- Reproducción desde apps/api: `TEST_BI_UNIFIED_LOCAL=true ../../node_modules/.bin/jest --runInBand --testRegex=bi-unified-local.integration.ts$ --runTestsByPath test/bi-unified-local.integration.ts`. El entorno debe permitir procesos/sockets locales; el sandbox inicial impidió el inicio de PostgreSQL y la ejecución autorizada fuera del sandbox completó los casos. El fallo de inicio no se cuenta como fallo funcional Red.
+- Sin commits/push, dependencias nuevas, clientes Prisma regenerados, endpoints registrados, cambios de UI o infraestructura. La retirada de Analítica permanece en fase4. Se revisarán DTO/composición del API en fase3.
+
+**Commit sugerido de fase2:** `feat(bi): incorporá consultas analíticas y validación real del warehouse`
+
+**Siguiente autorización:** ACK de fase2 y fase3, con ACK explícito para incorporar al schema canónico las cuatro entidades del fragmento Prisma ya revisable. Aplicar DDL persistente conserva una autorización separada; este paso no la solicita ni la necesita para comenzar.
+
+El harness PostgreSQL propio es manual (`.integration.ts`, fuera del patrón `.spec.ts` de Jest), como los benchmarks existentes: CI instala clientes PG18, no initdb/pg_ctl. No añadir una suite omitida al gate CI ni afirmar que la aceptación local haya corrido remotamente. La incorporación al harness CI sin depender de binarios de servidor locales queda para aceptación integral de fase5.

@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client';
 import type { BiFilterScope } from '../contracts/unified-bi.contract';
 
 /** Fixed aliases f=DW snapshot and c=category. Values always remain parameters. */
-export function snapshotPredicate(tenantId: string, runId: string, scope: BiFilterScope, tagsObserved: boolean): Prisma.Sql {
+export function snapshotPredicate(tenantId: string, runId: string | Prisma.Sql, scope: BiFilterScope, tagsObserved: boolean): Prisma.Sql {
   if (scope.tagId.length && !tagsObserved) throw new Error('BI_TAGS_NOT_OBSERVED');
   const predicates = [Prisma.sql`f.tenant_id = ${tenantId}::uuid`, Prisma.sql`f.run_id = ${runId}::uuid`];
   if (scope.categoryId.length) {
