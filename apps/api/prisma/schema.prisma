@@ -31,6 +31,11 @@ model Tenant {
   auditLogs           AuditLog[]
   logoCleanupJobs     TenantLogoCleanupJob[]
 
+  biKpiGoals BiKpiGoal[]
+  biObjectives BiObjective[]
+  biKeyResults BiKeyResult[]
+  biProgressEntries BiProgressEntry[]
+
   @@map("tenants")
   billingAccounts     BillingAccount?
 }
@@ -99,6 +104,11 @@ model User {
   apiKeysOwned        ApiKey[] @relation("api_key_owner")
   testimonialsCreated Testimonial[]  @relation("testimonial_created_by")
   auditLogs           AuditLog[]
+
+  biKpiGoalsOwned BiKpiGoal[] @relation("bi_kpi_owner")
+  biObjectivesOwned BiObjective[] @relation("bi_objective_owner")
+  biKeyResultsOwned BiKeyResult[] @relation("bi_result_owner")
+  biProgressRecorded BiProgressEntry[] @relation("bi_progress_recorder")
 
   @@unique([tenantId, id], map: "uq_users_tenant_id")
   @@index([tenantId], map: "idx_users_tenant")
@@ -831,4 +841,108 @@ model BillingWebhookInbox {
 
   @@unique([providerAccountId, eventKey])
   @@map("billing_webhook_inbox")
+}
+
+// BI governance: incorporation authorized by phase-3 ACK, 2026-11-01.
+model BiKpiGoal {
+  id                String    @id(map: "pk_bi_kpi_goals") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId          String    @map("tenant_id") @db.Uuid
+  ownerId           String    @map("owner_id") @db.Uuid
+  title             String
+  metricId          String    @map("metric_id")
+  catalogVersion    String    @default("bi_metrics_v1") @map("catalog_version")
+  periodFrom        DateTime  @map("period_from") @db.Date
+  periodTo          DateTime  @map("period_to") @db.Date
+  filters           Json
+  baseline          Decimal   @db.Decimal(40, 12)
+  target            Decimal   @db.Decimal(40, 12)
+  state             String    @default("draft")
+  version           Int       @default(0)
+  activatedAt       DateTime? @map("activated_at") @db.Timestamptz(3)
+  closedAt          DateTime? @map("closed_at") @db.Timestamptz(3)
+  archivedAt        DateTime? @map("archived_at") @db.Timestamptz(3)
+  closingEvaluation Json?     @map("closing_evaluation")
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  tenant            Tenant    @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_bi_kpi_goals_tenant")
+  owner             User      @relation("bi_kpi_owner", fields: [tenantId, ownerId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction, map: "fk_bi_kpi_goals_owner")
+
+  @@unique([tenantId, id], map: "uq_bi_kpi_goals_tenant_id")
+  @@index([tenantId, state, periodTo(sort: Desc), id(sort: Desc)], map: "idx_bi_kpi_tenant_state")
+  @@index([tenantId, ownerId], map: "idx_bi_kpi_owner")
+  @@map("bi_kpi_goals")
+}
+
+model BiObjective {
+  id                String        @id(map: "pk_bi_objectives") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId          String        @map("tenant_id") @db.Uuid
+  ownerId           String        @map("owner_id") @db.Uuid
+  title             String
+  description       String        @default("")
+  periodFrom        DateTime      @map("period_from") @db.Date
+  periodTo          DateTime      @map("period_to") @db.Date
+  state             String        @default("draft")
+  version           Int           @default(0)
+  activatedAt       DateTime?     @map("activated_at") @db.Timestamptz(3)
+  closedAt          DateTime?     @map("closed_at") @db.Timestamptz(3)
+  archivedAt        DateTime?     @map("archived_at") @db.Timestamptz(3)
+  closingEvaluation Json?         @map("closing_evaluation")
+  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  tenant            Tenant        @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_bi_objectives_tenant")
+  owner             User          @relation("bi_objective_owner", fields: [tenantId, ownerId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction, map: "fk_bi_objectives_owner")
+  keyResults        BiKeyResult[]
+
+  @@unique([tenantId, id], map: "uq_bi_objectives_tenant_id")
+  @@index([tenantId, state, periodTo(sort: Desc), id(sort: Desc)], map: "idx_bi_objective_tenant_state")
+  @@index([tenantId, ownerId], map: "idx_bi_objective_owner")
+  @@map("bi_objectives")
+}
+
+model BiKeyResult {
+  id             String            @id(map: "pk_bi_key_results") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId       String            @map("tenant_id") @db.Uuid
+  objectiveId    String            @map("objective_id") @db.Uuid
+  ownerId        String            @map("owner_id") @db.Uuid
+  title          String
+  kind           String
+  metricId       String?           @map("metric_id")
+  catalogVersion String?           @map("catalog_version")
+  filters        Json?
+  manualUnit     String?           @map("manual_unit")
+  baseline       Decimal           @db.Decimal(40, 12)
+  target         Decimal           @db.Decimal(40, 12)
+  version        Int               @default(0)
+  createdAt      DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  tenant         Tenant            @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_bi_results_tenant")
+  objective      BiObjective       @relation(fields: [tenantId, objectiveId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction, map: "fk_bi_results_objective")
+  owner          User              @relation("bi_result_owner", fields: [tenantId, ownerId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction, map: "fk_bi_results_owner")
+  progress       BiProgressEntry[]
+
+  @@unique([tenantId, id], map: "uq_bi_results_tenant_id")
+  @@unique([tenantId, objectiveId, id, kind], map: "uq_bi_results_progress_parent")
+  @@index([tenantId, objectiveId, createdAt, id], map: "idx_bi_result_objective")
+  @@index([tenantId, ownerId], map: "idx_bi_result_owner")
+  @@map("bi_key_results")
+}
+
+model BiProgressEntry {
+  id            String      @id(map: "pk_bi_progress_entries") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String      @map("tenant_id") @db.Uuid
+  objectiveId   String      @map("objective_id") @db.Uuid
+  keyResultId   String      @map("key_result_id") @db.Uuid
+  resultKind    String      @default("manual") @map("result_kind")
+  recordedById  String      @map("recorded_by_id") @db.Uuid
+  value         Decimal     @db.Decimal(40, 12)
+  effectiveDate DateTime    @map("effective_date") @db.Date
+  comment       String
+  recordedAt    DateTime    @default(now()) @map("recorded_at") @db.Timestamptz(3)
+  tenant        Tenant      @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_bi_progress_tenant")
+  keyResult     BiKeyResult @relation(fields: [tenantId, objectiveId, keyResultId, resultKind], references: [tenantId, objectiveId, id, kind], onDelete: Restrict, onUpdate: NoAction, map: "fk_bi_progress_result")
+  recordedBy    User        @relation("bi_progress_recorder", fields: [tenantId, recordedById], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction, map: "fk_bi_progress_recorder")
+
+  @@index([tenantId, objectiveId, keyResultId, resultKind, effectiveDate(sort: Desc), recordedAt(sort: Desc), id(sort: Desc)], map: "idx_bi_progress_result")
+  @@index([tenantId, recordedById], map: "idx_bi_progress_recorder")
+  @@map("bi_progress_entries")
 }

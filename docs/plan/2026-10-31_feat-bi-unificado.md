@@ -1,6 +1,6 @@
 # Unificación y ampliación de BI
 
-**Fecha:** 2026-10-31. **Estado:** fase 1 aprobada; fase 2 [Actual] implementada y verificada localmente; cierre y fases 3–5 pendientes de ACK.
+**Fecha:** 2026-10-31. **Estado:** fase 1 aprobada; fase 2 aprobada; fase 3 [Actual] en implementación; fases 4–5 pendientes de ACK.
 
 **Autorización inicial:** el usuario solicitó «PLEASE IMPLEMENT THIS PLAN» y reprodujo el plan completo, incluyendo ejecución por fases y ACK del repositorio. Autoriza la fase 1; no agrupar fases ni interpretar esto como autorización de DDL persistente, modificación directa del schema, infraestructura o despliegue.
 
@@ -26,8 +26,8 @@ Cuatro entidades OLTP con FK por empresa y auditoría existente. Progreso crecie
 | Fase | Estado | Entrega / aceptación |
 | --- | --- | --- |
 | 1. Contratos y diseño | Aprobada | Catálogo, validadores/tipos, contrato HTTP/temporal/permisos, borradores SQL/Prisma y verificación offline. Sin activación. |
-| 2. Datos y mediciones | [Actual] | Separar datos base de jobs stats; consultas DW, cohortes, filtros, comparaciones y evaluador compartido. PostgreSQL descartable/ACL y benchmark autorizados por separado. |
-| 3. Gestión y API | Pendiente de ACK | Tras ACK de schema, promover borradores con migración nueva, generar cliente; recursos KPI/OKR/avances, CAS, auditoría, idempotencia, asignaciones y cierre. Nuevos HTTP privados. |
+| 2. Datos y mediciones | Aprobada | Separar datos base de jobs stats; consultas DW, cohortes, filtros, comparaciones y evaluador compartido. PostgreSQL descartable/ACL y benchmark autorizados por separado. |
+| 3. Gestión y API | [Actual] | Tras ACK de schema, promover borradores con migración nueva, generar cliente; recursos KPI/OKR/avances, CAS, auditoría, idempotencia, asignaciones y cierre. Nuevos HTTP privados. |
 | 4. Interfaz y legado | Pendiente de ACK | Resumen/desgloses/gráficos/filtros, gestión KPI/OKR, Actividad operativa; única entrada BI, redirección y eliminación del feature antiguo, adaptadores compatibles. |
 | 5. Aceptación integral | Pendiente de ACK | Recorridos reales admin/editor/dos empresas, escritorio/móvil; caída DW, regresión, migración/ACL/restauración y documentación de habilitación. Sin despliegue remoto. |
 
@@ -111,3 +111,18 @@ Verificación: 140/140 casos en 13 suites, sin omisiones; cuatro casos nuevos de
 **Siguiente autorización:** ACK de fase2 y fase3, con ACK explícito para incorporar al schema canónico las cuatro entidades del fragmento Prisma ya revisable. Aplicar DDL persistente conserva una autorización separada; este paso no la solicita ni la necesita para comenzar.
 
 El harness PostgreSQL propio es manual (`.integration.ts`, fuera del patrón `.spec.ts` de Jest), como los benchmarks existentes: CI instala clientes PG18, no initdb/pg_ctl. No añadir una suite omitida al gate CI ni afirmar que la aceptación local haya corrido remotamente. La incorporación al harness CI sin depender de binarios de servidor locales queda para aceptación integral de fase5.
+
+## ACK de fase 3 (2026-11-01)
+
+El usuario respondió «Continuar» a la pregunta explícita que incluía cerrar fase2, iniciar fase3 e incorporar las cuatro entidades del fragmento al schema Prisma. Se acepta ese ACK para el schema; no habilita DDL persistente, fases4–5 o despliegue. Schema incorporado y borrador SQL promovido a migración aditiva20261101000000; no aplicada a destinos existentes.
+
+### Avance parcial de fase 3: modelo y escrituras
+
+- Schema canónico incorpora las cuatro entidades autorizadas y relaciones inversas; migración aditiva `20261101000000_bi_governance` promovida desde el borrador revisado. `prisma validate` y `prisma generate` aprobados con6.5. No se ejecutó migrate deploy/db push ni DDL sobre bases existentes.
+- `GovernanceRepository` implementa creación de KPI/objetivo, incorporación de resultado y registro de avance con transacción propia o la transacción suministrada por idempotencia. Comprueba permiso comercial dentro de tx, responsables activos del tenant, locks objetivo→resultado, versiones, definición borrador/límite20, y auditoría atómica sin comentarios/PII en metadata. No está registrado ni expuesto por HTTP todavía.
+- `governance-policy.ts`: permisos de admin/editor asignado, tenants, unidad manual, período no futuro, estado activo/manual y conflictos de versión. Estos controles tienen17 tests unitarios; no acreditan por sí solos el flujo completo de roles/HTTP/transacciones concurrentes.
+- Regresión focalizada:157/157 en14 suites. ESLint de producción y pruebas nuevas sin advertencias. Cinco tests SQL reales adicionales en harness manual `bi-governance-local.integration.ts`: inicia PostgreSQL18.6 propio en /tmp, padres sintéticos mínimos de tenant/usuario, aplica sólo esta migración mediante psql y valida Prisma/FK/checks/trigger append-only. Detiene y elimina su cluster; limpieza comprobada. No acredita despliegue del schema CMS completo ni AuthService/roles/billing/idempotencia reales.
+- Reproducción manual desde apps/api: `TEST_BI_GOVERNANCE_LOCAL=true ../../node_modules/.bin/jest --runInBand --testRegex=bi-governance-local.integration.ts$ --runTestsByPath test/bi-governance-local.integration.ts`. Requiere binarios initdb/pg_ctl/psql y permiso para socket local; queda fuera del patrón de suites CI como los otros harness locales.
+- Pendientes de fase3: servicios y DTO finales, lecturas/paginación de gestión, edición, activación/cierre/archivo con captura DW, integración obligatoria de idempotencia, endpoints privados/rate limits y pruebas HTTP/concurrencia/persistencia del flujo completo. No se declara fase3 terminada ni se solicita ACK para fase4.
+
+**Commit sugerido para este avance parcial:** `feat(bi): agregá el modelo y las escrituras transaccionales de objetivos`

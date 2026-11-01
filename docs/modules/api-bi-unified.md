@@ -1,5 +1,7 @@
 # BI unificado: contrato de evolución
 
+**Avance 2026-11-01:** fase3 autorizada; schema y migración aditiva OLTP incorporados, repositorio/políticas de creación y avances implementados. Validación SQL local con padres sintéticos mínimos, sin migración persistente ni registro de endpoints. Servicios/HTTP/ciclo de cierre todavía pendientes; el alcance detallado sigue como contrato de evolución.
+
 **Fecha:** 2026-10-31. **Estado:** fase 1: catálogo, contratos ejecutables y borradores de persistencia. **No hay endpoints nuevos registrados, cambios de interfaz ni migraciones aplicadas.**
 
 Complementa [BI actual](api-business-intelligence.md), [estadística](api-bi-statistics.md), [operación](api-bi-operations.md) y [plan HITL](../plan/2026-10-31_feat-bi-unificado.md). El catálogo de autoridad es `apps/api/src/modules/business-intelligence/contracts/metric-catalog.ts`; validadores y tipos están en el mismo directorio. Fórmulas del catálogo son definiciones semánticas, nunca SQL ejecutable construido desde texto del cliente.
