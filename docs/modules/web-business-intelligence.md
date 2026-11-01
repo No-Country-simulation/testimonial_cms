@@ -1,6 +1,6 @@
 # Interfaz de inteligencia de negocio
 
-**Unificación propuesta (2026-10-31):** [contrato](api-bi-unified.md) y [plan](../plan/2026-10-31_feat-bi-unificado.md) preparan gráficos/desgloses, KPIs/OKRs y la integración de Actividad. Sólo fase 1: la navegación y la pantalla Analítica actuales no se retiran hasta fase 4.
+**Unificación pendiente de interfaz (2026-11-01):** el [contrato](api-bi-unified.md) y el [plan](../plan/2026-10-31_feat-bi-unificado.md) documentan lecturas y gestión KPI/OKR ya implementadas en backend hasta fase 3. La navegación actual y la pantalla Analítica se integrarán en fase 4, después de su ACK; esta entrega todavía no modifica la UI.
 
 **Analítica estadística (2026-10-19):** fase4 implementada en `?view=statistics` para admin/editor: pronóstico, patrones y anomalías con gráficos/tablas y tres CSV independientes. [Contrato](api-bi-statistics.md#5-interfaz-y-exportación), [plan y evidencia](../plan/2026-10-19_feat-bi-analitica-estadistica.md). Opt-in de API apagado por defecto; aceptación integral local completada en fase5 con API/worker/PG/Redis y navegador reales. [Evidencia y habilitación](../operations/31_bi_statistics_validation_and_rollout.md). Despliegue y utilidad predictiva real pendientes.
 

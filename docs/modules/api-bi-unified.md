@@ -1,8 +1,6 @@
 # BI unificado: contrato de evolución
 
-**Avance 2026-11-01:** fase3 autorizada; schema y migración aditiva OLTP incorporados, repositorio/políticas de creación y avances implementados. Validación SQL local con padres sintéticos mínimos, sin migración persistente ni registro de endpoints. Servicios/HTTP/ciclo de cierre todavía pendientes; el alcance detallado sigue como contrato de evolución.
-
-**Fecha:** 2026-10-31. **Estado:** fase 1: catálogo, contratos ejecutables y borradores de persistencia. **No hay endpoints nuevos registrados, cambios de interfaz ni migraciones aplicadas.**
+**Avance 2026-11-01:** fases 1–2 aprobadas; fase 3 implementada y verificada localmente, pendiente de revisión/ACK. Registradas las lecturas analíticas y los recursos KPI/OKR/avances. Schema autorizado y migración aditiva incorporados; aplicada únicamente en PostgreSQL propio descartable. No se aplicó a bases persistentes. La interfaz unificada y retirada de Analítica corresponden a fase 4; aceptación integral del sistema, a fase 5.
 
 Complementa [BI actual](api-business-intelligence.md), [estadística](api-bi-statistics.md), [operación](api-bi-operations.md) y [plan HITL](../plan/2026-10-31_feat-bi-unificado.md). El catálogo de autoridad es `apps/api/src/modules/business-intelligence/contracts/metric-catalog.ts`; validadores y tipos están en el mismo directorio. Fórmulas del catálogo son definiciones semánticas, nunca SQL ejecutable construido desde texto del cliente.
 
@@ -51,7 +49,7 @@ Fuera de cobertura de reconciliación conocida, indicar `OUTSIDE_COVERAGE` en co
 
 `unified-bi.types.ts` fija los datos de respuesta: `BiOverview`, `BiBreakdowns`, `BiActivity`, `BiKpi`, `BiObjective` y sus procedencias. Aplicar validación equivalente en web al implementar sus adaptadores; los tipos no reemplazan validación de HTTP ni permisos.
 
-## 3. API propuesta y compatibilidad
+## 3. API implementada y compatibilidad pendiente
 
 Todas las rutas usan `/api/v1`, envelope existente `{success:true,data}` y, para listas, `data[]`/`meta` del interceptor. Métodos de mutación validan body estricto y query vacía; actor y tenant sólo de sesión. Lecturas 120/min; escrituras de metas 20/min, dentro del mecanismo actual. `Cache-Control: private, no-store` también en errores. UUID de recursos ajenos da 404; rol insuficiente, 403; versión incompatible, 409.
 
@@ -65,18 +63,20 @@ Todas las rutas usan `/api/v1`, envelope existente `{success:true,data}` y, para
 | `GET /bi/kpis`, `GET /bi/objectives` | Admin/editor; `page`, estado y responsable opcionales, 20 por página; orden período final DESC/ID DESC. Evaluaciones agrupadas por alcance, sin una conexión/query por tarjeta. |
 | `GET /bi/kpis/:id`, `GET /bi/objectives/:id` | Admin/editor; recurso con evaluación/avance, versiones y estado. Objetivo incluye hasta 20 resultados clave. |
 | `POST /bi/kpis`, `POST /bi/objectives` | Admin; definición, creación en borrador, 201. Validar responsable activo de la misma empresa, admin/editor. |
-| `PATCH /bi/kpis/:id`, `PATCH /bi/objectives/:id` | Admin; definición completa y `expectedVersion`, 200. En activo sólo título/descripción/responsable; campos congelados no se pueden alterar. Cerrado/archivado no admite edición. |
+| `PATCH /bi/kpis/:id`, `PATCH /bi/objectives/:id` | Admin; `{expectedVersion,definition}` con definición completa, 200. En activo sólo título/descripción/responsable; campos congelados no se pueden alterar. Cerrado/archivado no admite edición. |
 | `POST /bi/kpis/:id/transitions`, `POST /bi/objectives/:id/transitions` | Admin; `{expectedVersion,action:'activate'|'close'|'archive'}`, 200. |
-| `POST /bi/objectives/:id/key-results` | Admin; definición manual/automática en objetivo borrador; `expectedVersion` de objetivo, 201. Incrementa versión del objetivo. |
-| `PATCH /bi/objectives/:id/key-results/:resultId` | Admin; definición y `expectedVersion` de resultado y `expectedObjectiveVersion`. En objetivo activo sólo título/responsable; 200. |
+| `POST /bi/objectives/:id/key-results` | Admin; `{expectedVersion,definition}` manual/automática en objetivo borrador; versión del objetivo, 201. Incrementa versión del objetivo. |
+| `PATCH /bi/objectives/:id/key-results/:resultId` | Admin; `{expectedVersion,expectedObjectiveVersion,definition}` con versión del resultado y del objetivo. En objetivo activo sólo título/responsable; 200. |
 | `GET /bi/objectives/:id/key-results/:resultId/progress` | Admin/editor; historial de 20 por página, fecha efectiva DESC/registro DESC/ID DESC. |
 | `POST /bi/objectives/:id/key-results/:resultId/progress` | Admin o editor responsable actual del resultado manual; `manualProgressSchema`, 201. Sólo objetivo activo. |
 
 No DELETE: las bajas son archivo. Permitir completar un objetivo borrador sin todos sus resultados; activar exige entre 1 y 20. Corrección de un resultado mal definido: antes de activar, editar; después, cerrar/archivar y crear otro objetivo. No hay desactivación ni reabrir.
 
-POST exige `Idempotency-Key` vigente con el mecanismo OLTP existente: mismo actor/tenant/ruta/contenido recupera respuesta; clave con contenido distinto, 409. PATCH usa CAS; conflicto obliga a releer y revisar, nunca sobrescribir. Auditoría y cambios se confirman juntos. El detalle de errores no incluye datos de driver, SQL ni payloads.
+Las mutaciones devuelven recibos estables dentro del envelope: crear/editar/transicionar metas `{id,state,version}`; agregar/editar resultado `{id,objectiveId,version,objectiveVersion}`; agregar avance `{id,resultVersion,objectiveVersion}`. Consultar el GET de detalle para obtener evaluación actualizada. Los DTO finales de lectura y cierre se validan con `contracts/governance-response.ts`: KPI incluye `evaluation:{current,progress,rawProgress,evaluatedAt,provenance}`; objetivo incluye `keyResults`, `progress` y `evaluationStatus`. Avance real y avance visual acotado se conservan por separado. Las fechas de calendario son `YYYY-MM-DD` UTC y los instantes, ISO UTC.
 
-`GET /analytics/dashboard` conservará su forma acumulada y tope de 50 mediante el servicio de actividad compartido. Sus números antiguos conservan límites seguros; no redondear IDs grandes. `/bi/dashboard` conserva su semántica de último corte global y rango sólo en series/engagement, delegando al motor común con ese modo explícito. Ninguna nueva pantalla consumirá esos adaptadores. Tracking público y `/analytics/testimonials/:id` permanecen.
+POST exige `Idempotency-Key` vigente con el mecanismo OLTP existente: mismo actor/tenant/ruta/contenido recupera respuesta; clave con contenido distinto, 409. PATCH usa CAS; conflicto obliga a releer y revisar, nunca sobrescribir. Auditoría, cambio y recibo idempotente se confirman juntos. Preparar la captura DW y validar pertenencia de filtros precede a la transacción de escritura; un replay completado devuelve el recibo guardado sin repetir esa preparación. Las claves duran 24 horas conforme al mecanismo existente. Crear/editar un alcance con UUID de categoría/tag exige validarlo contra dimensiones históricas de la empresa en DW; sin ese dato disponible se rechaza el nuevo alcance, sin sustituirlo por consultas analíticas OLTP. Una definición sin UUID de dimensiones, un avance manual y un replay completado no requieren esa validación DW. El detalle de errores no incluye datos de driver, SQL ni payloads.
+
+**Pendiente de fase 4:** `GET /analytics/dashboard` conservará su forma acumulada y tope de 50 mediante el servicio de actividad compartido. Sus números antiguos conservan límites seguros; no redondear IDs grandes. `/bi/dashboard` conserva su semántica de último corte global y rango sólo en series/engagement, delegando al motor común con ese modo explícito. Ninguna nueva pantalla consumirá esos adaptadores. Tracking público y `/analytics/testimonials/:id` permanecen.
 
 ## 4. Objetivos, progreso y persistencia
 
@@ -102,18 +102,18 @@ Cierre explícito conserva JSON validado: catálogo, definiciones/alcances usado
 
 Cada avance comprueba asignación, estado y versiones dentro de la misma transacción, bloquea objetivo→resultado e incrementa versiones de ambos junto con entrada/auditoría/idempotencia. Crear/editar un resultado también incrementa la versión del padre. Padres y valores manuales se vuelven a leer si cambia la versión durante una evaluación.
 
-### Borradores y separación de permisos
+### Persistencia incorporada y separación de permisos
 
-[SQL propuesto](../plan/2026-10-31_feat-bi-unificado_oltp-draft.sql) y [fragmento Prisma](../plan/2026-10-31_feat-bi-unificado_schema.prisma) están fuera de la cadena activa. El fragmento documenta relaciones inversas que deberá incorporar el schema tras ACK explícito. No cambia `apps/api/prisma/schema.prisma` en esta fase.
+Los [borradores SQL](../plan/2026-10-31_feat-bi-unificado_oltp-draft.sql) y [Prisma](../plan/2026-10-31_feat-bi-unificado_schema.prisma) conservan el diseño revisado. Tras ACK explícito, las cuatro entidades y relaciones inversas están en el schema canónico y la migración aditiva `20261101000000_bi_governance`. No se modificaron migraciones anteriores. Despliegue persistente y concesión efectiva de permisos runtime siguen pendientes de autorización y aceptación integral; el arranque HTTP no ejecuta DDL ni consultas a estas tablas.
 
-El SQL incluye checks, índices de FK, FK de avances exclusivamente a resultado manual y trigger append-only. Reglas que requieren usuario/estado del padre se verifican transaccionalmente en fase 3; DDL no acredita RBAC. Ninguna identidad runtime recibe DDL. Runtime OLTP recibe SELECT/INSERT/UPDATE sólo en las tres tablas mutables, SELECT/INSERT en avances; extractor, lector DW, worker y control BI no reciben permisos sobre estos datos. No exportar textos libres, responsables o avances.
+El SQL incluye checks, índices de FK, FK de avances exclusivamente a resultado manual y trigger append-only. Reglas que requieren usuario/estado del padre se verifican transaccionalmente en el repositorio de gestión; DDL no acredita RBAC. Ninguna identidad runtime recibe DDL. Runtime OLTP recibe SELECT/INSERT/UPDATE sólo en las tres tablas mutables, SELECT/INSERT en avances; extractor, lector DW, worker y control BI no reciben permisos sobre estos datos. No exportar textos libres, responsables o avances.
 
 ## 5. Datos base, interfaz y aceptación pendiente
 
-Separar en fase 2 preflight/captura/publicación de taxonomía y primeras observaciones de la ejecución de jobs `stats_v1`. Reutilizar los objetos existentes de 0005 y la inicialización histórica manual; no duplicarlos. Datos base dependen de BI/entitlement `business_intelligence`; sólo jobs/publicación estadística dependen también de `BI_STATISTICS_ENABLED` y `bi_statistics`. Sin objetos/privilegios compatibles, conservar el flujo base antiguo y anunciar capacidades incompletas, sin inventar etiquetas. Una extracción base avanzada iniciada como completa no publica parcialmente. No crear marcadores de etiquetas para cortes pasados.
+Se separó en fase 2 el preflight/captura/publicación de taxonomía y primeras observaciones de la ejecución de jobs `stats_v1`. Reutilizar los objetos existentes de 0005 y la inicialización histórica manual; no duplicarlos. Datos base dependen de BI/entitlement `business_intelligence`; sólo jobs/publicación estadística dependen también de `BI_STATISTICS_ENABLED` y `bi_statistics`. Sin objetos/privilegios compatibles, conservar el flujo base antiguo y anunciar capacidades incompletas, sin inventar etiquetas. Una extracción base avanzada iniciada como completa no publica parcialmente. No crear marcadores de etiquetas para cortes pasados.
 
 No se propone DDL DW nuevo para estas capacidades en fase 1: 0001–0005 ya contienen sus datos. Índices adicionales se decidirán por EXPLAIN/benchmark en fase 2 y requerirán una migración nueva, nunca editar las anteriores. No añadir dependencias, infraestructura ni cron alternativo.
 
 Web: filtros explícitos y compartidos entre Resumen/Desgloses, chips y restablecer; cambios de dimensión no alteran ventanas de estadística o alcances de objetivos. Conservar gráficos estadísticos, tablas y CSV actuales. Nuevas gráficas Recharts con alternativa tabular, labels/unidades y teclado; barras de categorías/tags activan filtros. Máximos de ranking 20, listas de desgloses 50 y todos los límites visibles. CSV sólo respuesta autorizada visible, incluyendo rango/alcance/procedencia/truncamiento; neutralización de fórmulas igual que exportación actual. No incluir otros datos ocultos para exportar.
 
-Las pruebas de fase 1 verifican sólo catálogo y validadores. Quedan pendientes para fases 2–5 SQL efectivo/ACL, aislamiento de empresas/roles, cálculo independiente de métricas/progreso, actividad real, concurrencia, API, UI y navegador. [Matriz y fases](../plan/2026-10-31_feat-bi-unificado.md).
+Verificación local de fase 3: 184 casos en 19 suites de API/lógica/regresión, 14 casos OLTP y 13 DW contra PostgreSQL 18.6 propios descartables. Tipos y ESLint afectados aprobados. HTTP prueba JWT, RBAC, CSRF, cuotas, respuestas privadas y contratos; credenciales y almacén de cuotas están simulados. OLTP ejecuta persistencia, auditoría, CAS, idempotencia y actividad reales con padres sintéticos y permiso comercial simulado. Esto no acredita el recorrido con AuthService/billing/Redis reales ni despliegue o capacidad productiva. La matriz integral, UI/CSV y navegador continúan pendientes en fases 4–5. [Evidencia y reproducción](../plan/2026-10-31_feat-bi-unificado.md).

@@ -3,11 +3,11 @@ import { z } from 'zod';
 import type { BiFilterScope } from '../contracts/unified-bi.contract';
 import { resolveAnalyticsQuery, pageQuerySchema } from '../contracts/unified-bi.contract';
 import type { DateRange } from '../dtos/dashboard-query.dto';
-import { measured, ratio, average, metricValues } from '../utils/measurement-engine';
+import { measured, ratio, average, metricValues, compare, missing } from '../utils/measurement-engine';
 import { BiConnection } from './bi-connection';
 import { safeCount } from './dashboard.repository';
 import { PeriodMeasurementsRepository } from './period-measurements.repository';
-import { snapshotPredicate, sourcePredicate, hasInventoryScope } from './cohort-filter';
+import { snapshotPredicate, sourcePredicate, hasInventoryScope, previousPeriod } from './cohort-filter';
 
 export const filterOptionsQuerySchema = z.object({
   from:z.string().optional(), to:z.string().optional(), dimension:z.enum(['category','tag']),
@@ -82,9 +82,9 @@ export class ExplorationRepository {
         ranking:{items:ranking.map(row=>({testimonialId:row.testimonialId,views:measured(row.views),clicks:measured(row.clicks),plays:measured(row.plays),ctr:ratio(row.clicks,row.views)})),totalGroups:ranking[0]?.groups??'0',truncated:BigInt(ranking[0]?.groups??'0')>BigInt(ranking.length)}};
     });
   }
-  daily(tenantId:string, query:unknown, now=new Date()) {
+  daily(tenantId:string,query:unknown,now=new Date()){return this.connection.read(tx=>this.dailyIn(tx,tenantId,query,now));}
+  private async dailyIn(tx:Prisma.TransactionClient,tenantId:string,query:unknown,now:Date){
     const {from,to,timezone,...scope}=resolveAnalyticsQuery(query,now);
-    return this.connection.read(async tx=>{
       const period=await this.periods.period(tx,tenantId,{from,to,timezone},scope);
       const [cap]=await tx.$queryRaw<Array<{taxonomy:boolean}>>`SELECT to_regclass('dw.fact_tag_snapshot') IS NOT NULL AS taxonomy`;
       const tagged=cap?.taxonomy?Prisma.sql`EXISTS(SELECT 1 FROM dw.bridge_testimonial_tag_snapshot b WHERE b.tenant_id=f.tenant_id AND b.run_id=f.run_id AND b.testimonial_id=f.testimonial_id)`:Prisma.sql`false`;
@@ -138,6 +138,15 @@ export class ExplorationRepository {
           creationsReason:period.metrics.observed_creations.status==='unavailable'?period.metrics.observed_creations.reason:'CREATIONS_NOT_OBSERVED',
         })};
       })};
+  }
+  overview(tenantId:string,query:unknown,now=new Date()) {
+    return this.connection.read(async tx=>{
+      const current=await this.dailyIn(tx,tenantId,query,now);
+      const previousRange=previousPeriod(current.range);
+      const previous=previousRange?await this.periods.period(tx,tenantId,previousRange,current.filters):null;
+      const prior=new Map(Object.entries(previous?.metrics??{}));
+      const comparisons=Object.fromEntries(Object.entries(current.period.metrics).map(([key,value])=>[key,compare(value,prior.get(key)??missing('OUTSIDE_COVERAGE'))]));
+      return {...current,previousRange,previous,comparisons};
     });
   }
   filterOptions(tenantId:string, query:unknown, now=new Date()) {

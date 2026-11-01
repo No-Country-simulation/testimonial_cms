@@ -109,3 +109,6 @@ export type BiMeasurement = z.infer<typeof measurementSchema>;
 export type BiKpiDefinition = z.infer<typeof kpiDefinitionSchema>;
 export type BiObjectiveDefinition = z.infer<typeof objectiveDefinitionSchema>;
 export type BiKeyResultDefinition = z.infer<typeof keyResultDefinitionSchema>;
+
+export const governancePageSchema = z.object({page:pageQuerySchema}).strict();
+export const governanceListSchema = z.object({page:pageQuerySchema,state:lifecycleSchema.optional(),ownerId:z.uuid().optional()}).strict();

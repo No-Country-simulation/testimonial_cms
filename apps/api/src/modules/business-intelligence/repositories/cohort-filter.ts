@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import { ApplicationError } from '../../../common/errors/application.error';
 import type { BiFilterScope } from '../contracts/unified-bi.contract';
 
 /** Fixed aliases f=DW snapshot and c=category. Values always remain parameters. */
@@ -37,4 +38,20 @@ export function previousPeriod(range: {from: string; to: string}): {from: string
   const previous = new Date(start - days * 86400000);
   if (previous.getUTCFullYear() < 1) return null;
   return {from: previous.toISOString().slice(0,10),to: new Date(start - 86400000).toISOString().slice(0,10), timezone:'UTC'};
+}
+
+/** Catalog membership is scoped to this tenant, never inferred from a zero metric. */
+export async function assertScopeIds(tx:Prisma.TransactionClient,tenantId:string,scope:BiFilterScope,tagsAvailable:boolean):Promise<void>{
+  const categories=scope.categoryId.filter(value=>value!=='none');
+  const tags=scope.tagId.filter(value=>value!=='none');
+  if(categories.length){
+    const [row]=await tx.$queryRaw<Array<{count:bigint}>>(Prisma.sql`SELECT count(DISTINCT source_category_id) AS count FROM dw.dim_category
+      WHERE tenant_id=${tenantId}::uuid AND source_category_id::text IN (${Prisma.join(categories)})`);
+    if(row?.count!==BigInt(categories.length))throw new ApplicationError('Category filter is not part of this workspace','invalid_input','BI_FILTER_INVALID');
+  }
+  if(tags.length&&tagsAvailable){
+    const [row]=await tx.$queryRaw<Array<{count:bigint}>>(Prisma.sql`SELECT count(*) AS count FROM dw.dim_tag
+      WHERE tenant_id=${tenantId}::uuid AND tag_id::text IN (${Prisma.join(tags)})`);
+    if(row?.count!==BigInt(tags.length))throw new ApplicationError('Tag filter is not part of this workspace','invalid_input','BI_FILTER_INVALID');
+  }
 }

@@ -1,3 +1,12 @@
+import { BiAnalyticalController } from './controllers/bi-analytical.controller';
+import { ActivityRepository } from './repositories/activity.repository';
+import { ExplorationRepository } from './repositories/exploration.repository';
+import { AnalyticalReadService } from './services/analytical-read.service';
+import { BiGovernanceController } from './controllers/bi-governance.controller';
+import { GovernanceRepository } from './repositories/governance.repository';
+import { PeriodMeasurementsRepository } from './repositories/period-measurements.repository';
+import { GovernanceEvaluationService } from './services/governance-evaluation.service';
+import { GovernanceCommandService } from './services/governance-command.service';
 import { BiStatisticsController, BiStatisticsGuard } from './controllers/bi-statistics.controller';
 import { StatisticsReadRepository } from './repositories/statistics-read.repository';
 import { StatisticsReadService } from './services/statistics-read.service';
@@ -17,7 +26,10 @@ import { OperationsReadRepository } from './repositories/operations-read.reposit
 import { OperationsControlRepository } from './repositories/operations-control.repository';
 import { OperationsService } from './services/operations.service';
 
-@Module({ controllers: [BiController, BiMetricsController, BiOperationsController, BiStatisticsController], providers: [
+@Module({ controllers: [BiAnalyticalController,BiGovernanceController,BiController, BiMetricsController, BiOperationsController, BiStatisticsController], providers: [
+  GovernanceRepository,GovernanceEvaluationService,GovernanceCommandService,ActivityRepository,AnalyticalReadService,
+  {provide:ExplorationRepository,inject:[BiConnection],useFactory:(connection:BiConnection)=>new ExplorationRepository(connection)},
+  {provide:PeriodMeasurementsRepository,inject:[BiConnection],useFactory:(connection:BiConnection)=>new PeriodMeasurementsRepository(connection)},
   BiConnection, BiControlConnection, DashboardRepository, DashboardService, BiMetricsService, BiStatisticsGuard, StatisticsReadService,
   { provide: StatisticsReadRepository, inject: [BiConnection], useFactory: (connection: BiConnection) => new StatisticsReadRepository(connection) },
   BiOperationsGuard, BiIdempotencyKeyPipe, OperationsService,
@@ -26,6 +38,6 @@ import { OperationsService } from './services/operations.service';
 ] })
 export class BusinessIntelligenceModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
-    consumer.apply(BiPrivateMiddleware).forRoutes(BiController, BiOperationsController, BiStatisticsController);
+    consumer.apply(BiPrivateMiddleware).forRoutes(BiAnalyticalController,BiGovernanceController,BiController, BiOperationsController, BiStatisticsController);
   }
 }

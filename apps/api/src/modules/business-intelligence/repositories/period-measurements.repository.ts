@@ -1,10 +1,11 @@
 import { Prisma } from '@prisma/client';
+import { ApplicationError } from '../../../common/errors/application.error';
 import type { DateRange } from '../dtos/dashboard-query.dto';
 import type { BiFilterScope } from '../contracts/unified-bi.contract';
 import { resolveAnalyticsQuery } from '../contracts/unified-bi.contract';
 import { compare, metricValues, type MetricInputs } from '../utils/measurement-engine';
 import { BiConnection } from './bi-connection';
-import { snapshotPredicate, sourcePredicate, hasInventoryScope, previousPeriod } from './cohort-filter';
+import { snapshotPredicate, sourcePredicate, hasInventoryScope, previousPeriod, assertScopeIds } from './cohort-filter';
 
 type Header = { id: string; at: Date; published: Date };
 export class PeriodMeasurementsRepository {
@@ -22,6 +23,31 @@ export class PeriodMeasurementsRepository {
       return {range, filters, current, previous, comparisons};
     });
   }
+  validateScope(tenantId:string,scope:BiFilterScope){
+    const categoryIds=scope.categoryId.filter(value=>value!=='none');const tagIds=scope.tagId.filter(value=>value!=='none');
+    if(!categoryIds.length&&!tagIds.length)return Promise.resolve();
+    return this.connection.read(async tx=>{
+      let tagsReady=false;
+      if(tagIds.length){
+        const [cap]=await tx.$queryRaw<Array<{ready:boolean}>>`SELECT to_regclass('dw.dim_tag') IS NOT NULL AS ready`;
+        tagsReady=cap?.ready===true;
+        if(!tagsReady)throw new ApplicationError('Taxonomy unavailable for validating a new scope','unavailable','BI_STATISTICS_UNAVAILABLE');
+      }
+      await assertScopeIds(tx,tenantId,scope,tagsReady);
+    });
+  }
+  batch(tenantId:string, requests:Array<{key:string;query:unknown}>,now=new Date()) {
+    const queries=requests.map(request=>({key:request.key,scope:resolveAnalyticsQuery(request.query,now)}));
+    if(!queries.length)return Promise.resolve(new Map<string,Awaited<ReturnType<PeriodMeasurementsRepository['period']>>>());
+    return this.connection.read(async tx=>{
+      const results=new Map<string,Awaited<ReturnType<PeriodMeasurementsRepository['period']>>>();
+      for(const request of queries){
+        const {from,to,timezone,...filters}=request.scope;
+        results.set(request.key,await this.period(tx,tenantId,{from,to,timezone},filters));
+      }
+      return results;
+    });
+  }
   async period(tx: Prisma.TransactionClient, tenantId: string, range: DateRange, scope: BiFilterScope) {
     const [header] = await tx.$queryRaw<Header[]>`SELECT run_id AS id, snapshot_at AS at, published_at AS published
       FROM dw.fact_tenant_snapshot WHERE tenant_id=${tenantId}::uuid
@@ -34,9 +60,14 @@ export class PeriodMeasurementsRepository {
       const [marker] = await tx.$queryRaw<Array<{observed:boolean}>>`SELECT EXISTS(SELECT 1 FROM dw.fact_tag_snapshot WHERE tenant_id=${tenantId}::uuid AND run_id=${header.id}::uuid) AS observed`;
       tagsObserved = marker?.observed === true;
     }
-    const [history] = await tx.$queryRaw<Array<{started:string|null; observedAt:Date}>>`SELECT
+    if(header)await assertScopeIds(tx,tenantId,scope,tagsObserved);
+    const creationHistory=availability?.creations?Prisma.sql`(SELECT min(first_observed_at) FROM dw.fact_testimonial_creation WHERE tenant_id=${tenantId}::uuid)`:Prisma.sql`NULL::timestamptz`;
+    const [history] = await tx.$queryRaw<Array<{started:string|null; observedAt:Date; reconciliation:{id:string;at:string;published:string}|null; creationStarted:Date|null}>>(Prisma.sql`SELECT
       (SELECT least(min(snapshot_at)::date, (SELECT min(date_key) FROM dw.fact_engagement_daily WHERE tenant_id=${tenantId}::uuid))::text
-       FROM dw.fact_tenant_snapshot WHERE tenant_id=${tenantId}::uuid) AS started, statement_timestamp() AS "observedAt"`;
+       FROM dw.fact_tenant_snapshot WHERE tenant_id=${tenantId}::uuid) AS started, statement_timestamp() AS "observedAt",
+      (SELECT jsonb_build_object('id',run_id,'at',snapshot_at,'published',published_at) FROM dw.fact_tenant_snapshot
+        WHERE tenant_id=${tenantId}::uuid ORDER BY snapshot_at DESC,run_id LIMIT 1) AS reconciliation,
+      ${creationHistory} AS "creationStarted"`);
     const missingTags = scope.tagId.length > 0 && !tagsObserved;
     const canCohort = Boolean(header) && !missingTags;
     const cohort = canCohort ? Prisma.sql`SELECT f.testimonial_id, f.status_code, f.rating, c.source_category_id
@@ -83,6 +114,6 @@ export class PeriodMeasurementsRepository {
     const metrics = metricValues({inventory,engagement,creations,inventoryReason:missingTags?'TAGS_NOT_OBSERVED':'NO_CUT',
       engagementReason:missingTags?'TAGS_NOT_OBSERVED':cohortRequired&&!header?'NO_CUT':'OUTSIDE_COVERAGE',
       creationsReason:missingTags?'TAGS_NOT_OBSERVED':!covered?'OUTSIDE_COVERAGE':'CREATIONS_NOT_OBSERVED'});
-    return {metrics, closingCut:header??null, tagsObserved, observedAt:history?.observedAt??null, coverageStartedAt:history?.started??null};
+    return {metrics, closingCut:header??null, tagsObserved, observedAt:history?.observedAt??null, coverageStartedAt:history?.started??null, reconciliation:history?.reconciliation??null, creationHistoryStartedAt:history?.creationStarted??null};
   }
 }

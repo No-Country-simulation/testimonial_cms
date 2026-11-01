@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { ApplicationError, InternalError } from '../errors/application.error';
@@ -16,7 +16,7 @@ export interface IdempotencyRequest {
   method: 'POST';
   path: string;
   payload: unknown;
-  statusCode: 201 | 202;
+  statusCode: 200 | 201 | 202;
 }
 
 export interface IdempotencyResult<T> {
@@ -44,6 +44,10 @@ function canonicalize(value: unknown): unknown {
     );
   }
   throw new ApplicationError('Invalid idempotency payload', 'invalid_input', 'IDEMPOTENCY_PAYLOAD_INVALID');
+}
+
+function sameHash(left:string,right:string):boolean {
+  const a=Buffer.from(left);const b=Buffer.from(right);return a.length===b.length&&timingSafeEqual(a,b);
 }
 
 @Injectable()
@@ -112,7 +116,7 @@ export class IdempotencyRepository implements OnModuleInit, OnModuleDestroy {
           `;
           const existing = rows[0];
           if (!existing) throw new InternalError('Idempotency result unavailable');
-          if (existing.requestHash !== hash) {
+          if (!sameHash(existing.requestHash,hash)) {
             throw new ApplicationError('Idempotency-Key belongs to another request', 'conflict', 'IDEMPOTENCY_KEY_REUSED');
           }
           if (existing.recordState !== 'completed' || existing.statusCode === null || existing.responseBody === null) {
@@ -139,6 +143,27 @@ export class IdempotencyRepository implements OnModuleInit, OnModuleDestroy {
       }
       throw error;
     }
+  }
+
+  /** Prepare cross-database reads outside the OLTP transaction; completed retries never prepare again. */
+  async executePrepared<T,P>(request:IdempotencyRequest,prepare:()=>Promise<P>,operation:(prepared:P,tx?:Prisma.TransactionClient)=>Promise<T>):Promise<IdempotencyResult<T>> {
+    const prior=await this.completed<T>(request);if(prior)return prior;
+    let prepared:P;
+    try{prepared=await prepare();}
+    catch(error){const replay=await this.completed<T>(request);if(replay)return replay;throw error;}
+    return this.execute(request,tx=>operation(prepared,tx));
+  }
+  private async completed<T>(request:IdempotencyRequest):Promise<IdempotencyResult<T>|undefined> {
+    if(request.key===undefined)return undefined;
+    if(!KEY_PATTERN.test(request.key))throw new ApplicationError('Invalid Idempotency-Key','invalid_input','IDEMPOTENCY_KEY_INVALID');
+    const hash=createHash('sha256').update(JSON.stringify(canonicalize(request.payload))).digest('hex');
+    const rows=await this.prisma.$queryRaw<StoredResult[]>`SELECT request_hash AS "requestHash",record_state AS "recordState",status_code AS "statusCode",response_body AS "responseBody"
+      FROM idempotency_keys WHERE tenant_id=${request.tenantId}::uuid AND principal_kind=${request.principalKind} AND principal_id=${request.principalId}
+      AND method=${request.method} AND path=${request.path} AND key=${request.key} AND expires_at>now()`;
+    const row=rows[0];if(!row)return undefined;
+    if(!sameHash(row.requestHash,hash))throw new ApplicationError('Idempotency-Key belongs to another request','conflict','IDEMPOTENCY_KEY_REUSED');
+    if(row.recordState==='completed'&&row.statusCode!==null&&row.responseBody!==null)return {value:row.responseBody as T,replayed:true};
+    return undefined;
   }
 
   private async pruneExpired(): Promise<void> {

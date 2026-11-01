@@ -1,6 +1,6 @@
 # Contrato: Business Intelligence
 
-**Evolución BI unificado (2026-10-31):** fase 1 incorpora catálogo/contratos y borradores de gestión KPI/OKR; [contrato propuesto](api-bi-unified.md) y [plan por fases](../plan/2026-10-31_feat-bi-unificado.md). Sin endpoints registrados, cambios de UI ni migraciones aplicadas; contratos vigentes conservados.
+**Evolución BI unificado (2026-11-01):** fases 1–2 aprobadas; fase 3 implementa lecturas analíticas y gestión persistente de KPIs/OKRs/avances, con evaluación compartida, CAS, auditoría e idempotencia. [Contrato de API](api-bi-unified.md) y [plan/evidencia](../plan/2026-10-31_feat-bi-unificado.md). Migración aditiva preparada y probada sólo en PostgreSQL local descartable; sin aplicación persistente. Interfaz y retirada de Analítica pendientes de fase 4; contratos anteriores conservados.
 
 **Fecha:** 2026-10-09. **Estado:** warehouse/ETL/scoring, endpoint, panel, métricas y tiempo dimensional implementados; integración y operación verificadas localmente. Despliegue persistente no verificado.
 

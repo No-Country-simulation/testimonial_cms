@@ -11,4 +11,8 @@ export class IdempotencyService {
   execute<T>(request: IdempotencyRequest, operation: (tx?: TransactionClient) => Promise<T>): Promise<IdempotencyResult<T>> {
     return this.repository.execute(request, operation);
   }
+  executePrepared<T,P>(request:IdempotencyRequest,prepare:()=>Promise<P>,operation:(prepared:P,tx?:TransactionClient)=>Promise<T>):Promise<IdempotencyResult<T>> {
+    return this.repository.executePrepared(request,prepare,operation);
+  }
+
 }

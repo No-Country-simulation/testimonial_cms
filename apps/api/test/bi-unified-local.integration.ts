@@ -9,6 +9,7 @@ import {installBiWarehouse} from './fixtures/bi-warehouse';
 import {applyWarehouseMigration} from '../src/modules/business-intelligence/repositories/warehouse-migrations';
 import {WarehouseRepository} from '../src/modules/business-intelligence/repositories/warehouse.repository';
 import {BiConnection} from '../src/modules/business-intelligence/repositories/bi-connection';
+import {AnalyticalReadService} from '../src/modules/business-intelligence/services/analytical-read.service';
 import {ExplorationRepository} from '../src/modules/business-intelligence/repositories/exploration.repository';
 import {PeriodMeasurementsRepository} from '../src/modules/business-intelligence/repositories/period-measurements.repository';
 import {hourUtc} from '../src/modules/business-intelligence/etl.types';
@@ -139,6 +140,19 @@ run('unified BI on an owned disposable PostgreSQL 18 cluster',()=>{
     expect(unfiltered.current.metrics.tagged_share).toMatchObject({reason:'TAGS_NOT_OBSERVED'});
     expect((await periods.read(legacy,{...query,tagId:'none'})).current.metrics.inventory_total).toMatchObject({reason:'TAGS_NOT_OBSERVED'});
     expect((await explore.filterOptions(legacy,{...query,dimension:'tag'})).meta.availability).toBe('TAGS_NOT_OBSERVED');
+  });
+
+  it('composes an overview from one DW snapshot with explicit previous-period gaps',async()=>{
+    const service=new AnalyticalReadService(explore,{settings:async()=>({frequencyHours:1,delayToleranceMinutes:60})} as never);
+    const overview=await service.overview(a,query);
+    expect(overview).toMatchObject({contractVersion:'bi_overview_v1',metrics:{inventory_total:{value:'2'}},previous:{metrics:{inventory_total:{reason:'NO_CUT'}}}});
+    expect(overview.daily).toHaveLength(3);expect(overview.provenance.closingCut?.snapshotAt).toBe('2026-10-03T23:00:00.000Z');
+    expect((await service.breakdowns(a,query)).provenance.tagsAtClosingCut).toBe('observed');
+  });
+
+  it('rejects unknown category and tag IDs without treating them as a zero cohort',async()=>{
+    await expect(periods.read(a,{...query,categoryId:randomUUID()})).rejects.toMatchObject({code:'BI_FILTER_INVALID'});
+    await expect(periods.read(a,{...query,tagId:randomUUID()})).rejects.toMatchObject({code:'BI_FILTER_INVALID'});
   });
 
 });
